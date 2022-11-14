@@ -1,56 +1,68 @@
-# Testing basado en propiedades
+# PFPS - Persistence Layer - Redis 
 
 
 
-## Quién soy
+### What is Redis
 
-**Roberto Serrano**
+[Redis](https://redis.io/) is an open source, in-memory data structure store, used as a database, cache and message broker. <i class="fa-solid fa-book"></i>
 
-Desarrollo backend en Scala
 
-Trabajo en remoto para [47 degrees](https://www.47deg.com/)
+Note:
+1. a
+
+
+
+### Redis4Cats
+
+Is a purely functional and asynchronous Redis client built on top of Cats Effect, Fs2, and Java’s Lettuce.
 
 <p>
-  <strong>bilki</strong> @
-  <a href="https://twitter.com/bilki"><i class="fa-brands fa-twitter-square"></i></a>
-  <a href="https://github.com/bilki"><i class="fa-brands fa-github-square"></i></a>
+  <strong>Redis4Cats</strong> @
+  <a href="https://github.com/profunktor/redis4cats"><i class="fa-brands fa-github-square"></i></a>
 </p>
 
 
+Note:
+1. a
 
-### ¿Por qué escribimos tests?
 
-Verificación <i class="fa-solid fa-magnifying-glass"></i>
-<!-- .element: class="fragment" data-fragment-index="1" -->
 
-Documentación <i class="fa-solid fa-book"></i>
-<!-- .element: class="fragment" data-fragment-index="2" -->
+### Example of Connection
+
+```scala mdoc:invisible
+import cats.effect._
+import cats.implicits._
+import dev.profunktor.redis4cats.Redis
+import dev.profunktor.redis4cats.effect.Log.Stdout._
+```
+```scala mdoc
+object QuickStart extends IOApp.Simple {
+
+  def run: IO[Unit] =
+    Redis[IO].utf8("redis://localhost").use { redis =>
+      for {
+        _ <- redis.set("foo", "123")
+        x <- redis.get("foo")
+        _ <- redis.setNx("foo", "should not happen")
+        y <- redis.get("foo")
+        _ <- IO(println(x === y)) // true
+      } yield ()
+    }
+
+}
+```
+
+
+
+### How to real connect
+
+```scala 
+val mkRedisResource: Resource[F, RedisCommands[F, String, String]] =
+  Redis[F].utf8("redis: //localhost")
+```
 
 Note:
-1. Preguntar a la audiencia por sus razones, ¿añadirían alguna más?
-2. La verificación es comprobar que efectivamente el software hace lo que queremos que haga (ojo, también importa cómo lo haga)
-3. La documentación es un subproducto de la especificación de las verificaciones (los requisitos)
-4. El código es el *cómo*, los tests el *qué*
-
-
-
-### Tipos de tests
-
-* Unitarios
-* Integración
-* E2E
-* Smoke
-* Aceptación
-* Golden
-* UI
-* Performance
-* Chaos
-* ...
-
-
-Note:
-1. Con cada tipo buscamos cubrir una necesidad distinta de verificación
-2. Habitualmente, se habla de una pirámide de testing, con los unitarios en la base, etc. No entraremos en esa discusión, porque hay diversidad de opiniones al respecto
+1. We need a Log to make it able to run
 
 
 

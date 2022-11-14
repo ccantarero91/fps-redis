@@ -4,8 +4,12 @@ lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(
     "org.scalameta"  %% "munit"            % "0.7.29",
     "org.scalameta"  %% "munit-scalacheck" % "0.7.29",
-    "org.scalacheck" %% "scalacheck"       % "1.16.0"
-  )
+    "org.scalacheck" %% "scalacheck"       % "1.17.0",
+    "org.typelevel"    %% "cats-core"   %   "2.8.0",
+    "org.typelevel"    %% "cats-effect" %"3.3.14",
+    "dev.profunktor" %% "redis4cats-effects" % "1.2.0",
+    "dev.profunktor" %% "redis4cats-log4cats" % "1.2.0"
+)
 )
 
 scalacOptions ++= Seq(
