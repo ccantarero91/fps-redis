@@ -26,8 +26,8 @@ lazy val talk =
     .in(file("modules/talk"))
     .enablePlugins(MdocPlugin, GitHubPagesPlugin)
     .settings(
-      gitHubPagesOrgName  := "bilki",
-      gitHubPagesRepoName := "pbt-talk",
+      gitHubPagesOrgName  := "ccantarero91",
+      gitHubPagesRepoName := "fps-redis",
       gitHubPagesSiteDir  := baseDirectory.value / "target" / "mdoc",
       mdocIn              := baseDirectory.value / "slides"
     )
