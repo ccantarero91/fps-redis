@@ -235,6 +235,172 @@ Note:
 
 
 
+### Health Check
+```scala
+object HealthCheck {
+  def make[F[_]: Temporal](
+      postgres: Resource[F, Session[F]],
+      redis: RedisCommands[F, String, String]
+  ): HealthCheck[F] =
+    new HealthCheck[F] {
+      val q: Query[Void, Int] =
+        sql"SELECT pid FROM pg_stat_activity".query(int4)
+      val redisHealth: F[RedisStatus] =
+        redis.ping
+          .map(_.nonEmpty)
+          .timeout(1.second)
+          .map(Status._Bool.reverseGet)
+          .orElse(Status.Unreachable.pure[F].widen)
+          .map(RedisStatus.apply)
+      val postgresHealth: F[PostgresStatus] =
+        postgres
+          .use(_.execute(q))
+          .map(_.nonEmpty)
+          .timeout(1.second)
+          .map(Status._Bool.reverseGet)
+          .orElse(Status.Unreachable.pure[F].widen)
+          .map(PostgresStatus.apply)
+      val status: F[AppStatus] =
+        (
+          redisHealth,
+          postgresHealth
+        ).parMapN(AppStatus.apply)
+ } 
+}
+```
+Note:
+1. To make sure the persistance layer is working correclty there is an endpoint called "/healthcheck"
+2. For Redis, we simply ping the server; 
+3. for Postgres, we run a simple query. 
+3. Both actions have a timeout of one second 
+5. Are performed in parallel, using the parMapN function.
+
+
+
+### Blocking
+- Skunk & Redis4Cats are both async, so don't need to worry about blocking operations
+- But other libraries such as Doobie, Slick they are blocking, so wee need to use:
+- In Cats Effects 2 we have `Blocker`
+- In Cats Effects 3 we have the following functions:
+
+```scala
+// for all `Sync[F]`
+def blocking[A](thunk: => A): F[A] 
+
+// for all `Async[F]`
+def evalOn[A](fa: F[A], ec: ExecutionContext): F[A]
+```
+
+Note:
+1. `Blocker`  is datatype that merely wraps an ExecutionContext
+2. `evalOn` is when need to run a whole effect on a blocking pool
+
+
+
+
+### Blocking II 
+
+```scala
+import cats.effect.IO
+import cats.effect.Sync
+
+val program = IO.blocking(println("hello blocking!"))
+// program: IO[Unit] = Blocking(
+//   hint = Blocking,
+//   thunk = <function0>,
+//   event = cats.effect.tracing.TracingEvent$StackTrace
+// )
+
+val programSync = Sync[IO].blocking(println("hello Sync blocking!"))
+// programSync: IO[Unit] = Blocking(
+//   hint = Blocking,
+//   thunk = <function0>,
+//   event = cats.effect.tracing.TracingEvent$StackTrace
+// )
+```
+```scala
+import scala.concurrent.ExecutionContext
+
+def myBlockingPool: ExecutionContext = ???
+
+def myBlocking[A](fa: IO[A]) = fa.evalOn(myBlockingPool)
+```
+
+
+
+### Transactions
+- Imagine we want to create an:
+  - Item
+  - Brand
+  - Categories
+- In an atomic transaction
+- As they are right now defined NO WAY
+
+
+
+  
+### Transactions II
+
+````scala
+trait TxItems[F[_]] {
+  def create(item: ItemCreation): F[ItemId]
+}
+
+case class ItemCreation(
+  brand: BrandName,
+  category: CategoryName,
+  name: ItemName,
+  desc: ItemDescription,
+  price: Money
+)
+````
+Note:
+1. Instead of taking the BrandId and CategoryId, it takes the names, 
+2. the IDs will be created in the transactional block.
+
+
+
+
+### Transaction III 
+````scala
+object TxItems {
+  import BrandSQL._, CategorySQL._, ItemSQL._
+  def make[F[_]: GenUUID: MonadCancelThrow](
+      postgres: Resource[F, Session[F]]
+  ): TxItems[F] =
+    new TxItems[F] {
+      def create(item: ItemCreation): F[ItemId] =
+        postgres.use { s  =>
+          (
+            s.prepare(insertBrand),
+            s.prepare(insertCategory),
+            s.prepare(insertItem)
+          ).tupled.use {
+            case (ib, ic, it)  =>
+              s.transaction.surround {
+                for {
+                  bid <- ID.make[F, BrandId]
+                  _   <- ib.execute(Brand(bid, item.brand)).void
+                  cid <- ID.make[F, CategoryId]
+                  _   <- ic.execute(Category(cid, item.category)).void
+                  tid <- ID.make[F, ItemId]
+                  itm = CreateItem(item.name, item.desc, item.price, bid, cid)
+                  _   <- it.execute(tid ~ itm).void
+                } yield tid 
+              }
+          } 
+        }
+    } 
+}
+````
+Note:
+- we only need to execute the SQL statements within the scope of the transaction
+- `s.transaction.surround`
+- In Doobie we can do this with ConnectionIO
+
+
+
+
 ### Questions?
 
 ![Questions](imgs/questions.webp)
@@ -243,18 +409,8 @@ Note:
 
 ### Fuentes
 
-| Título                                                                                                       | Autor          |
-|--------------------------------------------------------------------------------------------------------------|----------------|
-| [Redis Data Types](https://redis.io/docs/data-types/tutorial/#hashes)                                        | Redis          |
-| [Redis Command HSET](https://redis.io/commands/hset/)                                                        | Redis          |
-| [The lazy programmer's guide to writing thousands of tests](https://www.youtube.com/watch?v=IYzDFHx6QPY)     | Scott Wlaschin |
-| [Property-Based Testing: Let Your Testing Library Work for You](https://www.youtube.com/watch?v=pO4_3kg1wMw) | Magda Stożek   |
-
-
-
-### Fuentes
-
-| Título                                                                                                            | Autor          |
-|-------------------------------------------------------------------------------------------------------------------|----------------|
-| [Property (mathematics)](https://en.wikipedia.org/wiki/Property_(mathematics))                                    | Wikipedia      |
-| [Refactoring the three laws of TDD](http://www.javiersaldana.com/articles/tech/refactoring-the-three-laws-of-tdd) | Javier Saldana |
+| Título                                                                                                       | Autor        |
+|--------------------------------------------------------------------------------------------------------------|--------------|
+| [Redis Data Types](https://redis.io/docs/data-types/tutorial/#hashes)                                        | Redis        |
+| [Redis Command HSET](https://redis.io/commands/hset/)                                                        | Redis        |
+| [Cats Effect Migration Guide](https://typelevel.org/cats-effect/docs/migration-guide)                        | Cats Effect  |
