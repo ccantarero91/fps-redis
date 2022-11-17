@@ -341,16 +341,16 @@ Note:
 
 ```scala
 val number = Gen.posNum[Int].sample.get
-// number: Int = 46
+// number: Int = 49
 
 val string = Gen.stringOfN(10, Gen.alphaChar).sample.get
-// string: String = "ewSzHEPPCb"
+// string: String = "JmQtlJfndr"
 
 val boolean = arbitrary[Boolean].sample.get
-// boolean: Boolean = false
+// boolean: Boolean = true
 
 val numbers = Gen.listOfN(5, Gen.posNum[Int]).sample.get
-// numbers: List[Int] = List(99, 60, 16, 14, 98)
+// numbers: List[Int] = List(96, 2, 97, 74, 61)
 ```
 
 Note:
@@ -370,10 +370,10 @@ val personGen = for {
   name <- Gen.stringOfN(10, Gen.alphaChar)
   age  <- Gen.chooseNum(1, 125)
 } yield Person(name, age)
-// personGen: Gen[Person] = org.scalacheck.Gen$$anon$5@65aab29c
+// personGen: Gen[Person] = org.scalacheck.Gen$$anon$5@27c9d9c6
 
 val person = personGen.sample.get
-// person: Person = Person(name = "IOMyCSxUbx", age = 125)
+// person: Person = Person(name = "ZirxTnmKFS", age = 42)
 ```
 
 Note:

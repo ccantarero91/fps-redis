@@ -94,7 +94,7 @@ Note:
 ```
 
 Note:
-1. We set different  `fields` username, birthday, verified  in the hash stored at `key` user:1000. 
+1. For example here with hset we set different  `fields` username, birthday, verified  in the hash stored at `key` user:1000. 
 2. If `key` does not exist, a new key holding a hash is created. 
 3. If `field` already exists in the hash, it is overwritten. 
 4. When we set we can see that the it returns the number of fields that were added
@@ -114,10 +114,15 @@ object ShoppingCart {
 ```
 
 Note:
-1. Let’s first have a look at the dependencies of the ShoppingCart interpreter and later analyze its functions in detail.
+1. Let’s first have a look at the dependencies of the ShoppingCart interpreter 
+2. In addition to RedisCommands, it takes 
+3. an Items[F] and a 
+4. ShoppingCartExpiration (a newtype over a FiniteDuration).
 
 
-### Shopping Cart II
+
+
+### Shopping Cart - add
 
 ```scala
 def add(
@@ -129,14 +134,16 @@ def add(
     redis.expire(userId.show, exp.value).void
 ```
 
-- Adds an item id (field) and a quantity (value) to the user id key
-- Also sets the expiration time of the shopping cart for the user
+Note:
+1. Adds an item id (field) and a quantity (value) to the user id key 
+2. Also sets the expiration time of the shopping cart for the user
 
 
 
-### Shopping Cart III
 
-````scala
+### Shopping Cart - GET
+
+```scala
 def get(userId: UserId): F[CartTotal] =
   redis.hGetAll(userId.show).flatMap {
     _.toList
@@ -146,18 +153,85 @@ def get(userId: UserId): F[CartTotal] =
             id <- ID.read[F, ItemId](k)
             qt <- MonadThrow[F].catchNonFatal(Quantity(v.toInt))
             rs <- items.findById(id).map(_.map(_.cart(qt)))
-} yield rs }
+        } yield rs 
+      }
       .map { items  =>
         CartTotal(items, items.foldMap(_.subTotal))
-} }
+      } 
+  }
 
-````
+```
+Note:
+1. It tries to find the shopping cart for the user via the hGetAll function, 
+2. This returns a Map[String, String], or a Map[K, V], generically speaking. 
+3. If it exists, it parses both fields and values into a List[CartItem] and finally, 
+4. it calculates the total amount.
+
+
+
+
+### Shopping Cart - Cart Item
+```scala
+@derive(decoder, encoder, eqv, show)
+case class CartItem(
+                     item: Item,
+                     quantity: Quantity ){
+  def subTotal: Money = USD(item.price.amount * quantity.value)
+}
+
+implicit val moneyMonoid: Monoid[Money] =
+  new Monoid[Money] {
+    def empty: Money = USD(0)
+    def combine(
+                 x: Money,
+                 y: Money
+               ): Money = x + y
+  }
+```
 
 Note:
-1. It tries to find the shopping cart for the user via the hGetAll function, which returns a Map[String, String], or a Map[K, V], generically speaking. 
-2. If it exists, it parses both fields and values into a List[CartItem] and finally, it calculates the total amount. The subTotal function is defined on CartItem.
+1. The subTotal function is defined on CartItem we are going to see in the following slide
+2. The foldMap function on List[Item] requires a Monoid[Money] instance
 
 
+
+
+### Shopping Cart - delete, removeItem
+```scala
+def delete(userId: UserId): F[Unit] =
+  redis.del(userId.show).void
+
+def removeItem(userId: UserId, itemId: ItemId): F[Unit] =
+  redis.hDel(userId.show, itemId.show).void
+```
+
+Note:
+1. delete, which simply deletes the shopping cart for the user.
+2. removeItem, which removes a specific item from the shopping cart.
+3. Note here it uses `hdel` which Removes the specified fields from the hash stored at key
+
+
+
+
+### Shopping Cart - update
+```scala
+def update(userId: UserId, cart: Cart): F[Unit] =
+  redis.hGetAll(userId.show).flatMap {
+    _.toList.traverse_ {
+      case (k, _)  =>
+        ID.read[F, ItemId](k).flatMap { id  =>
+          cart.items.get(id).traverse_ { q  =>
+            redis.hSet(userId.show, k, q.show)
+          }
+        } }*>
+      redis.expire(userId.show, exp.value).void
+  }
+```
+
+Note:
+1. update retrieves the shopping cart for the user (if it exists)
+2. and it updates the quantity of each matching item,
+3. followed by updating the shopping cart expiration.
 
 
 
