@@ -279,9 +279,9 @@ Note:
 
 ### Blocking
 - Skunk & Redis4Cats are both async, so don't need to worry about blocking operations
-- But other libraries such as Doobie, Slick they are blocking, so wee need to use:
+- But in other libraries such as Slick which are blocking, you can use:
 - In Cats Effects 2 we have `Blocker`
-- In Cats Effects 3 we have the following functions:
+- In Cats Effects 3 we have the following functions :
 
 ```scala
 // for all `Sync[F]`
@@ -311,12 +311,6 @@ val program = IO.blocking(println("hello blocking!"))
 //   event = cats.effect.tracing.TracingEvent$StackTrace
 // )
 
-val programSync = Sync[IO].blocking(println("hello Sync blocking!"))
-// programSync: IO[Unit] = Blocking(
-//   hint = Blocking,
-//   thunk = <function0>,
-//   event = cats.effect.tracing.TracingEvent$StackTrace
-// )
 ```
 ```scala
 import scala.concurrent.ExecutionContext
@@ -334,7 +328,7 @@ def myBlocking[A](fa: IO[A]) = fa.evalOn(myBlockingPool)
   - Brand
   - Categories
 - In an atomic transaction
-- As they are right now defined NO WAY
+- As they are right now defined we cant, so the book propose some changes
 
 
 
@@ -400,6 +394,76 @@ Note:
 
 
 
+### Transaction Doobie I
+
+````scala
+trait UserRepository[F[_]] {
+  def findUser(id: SlackUserId): F[Option[UserId]]
+}
+
+object UserRepository {
+  import UserQueries._
+  val repo: UserRepository[ConnectionIO] = new UserRepository[ConnectionIO] {
+    override def findUser(id: SlackUserId): ConnectionIO[Option[UserId]] =
+      userIdQuery(id).option
+  }
+}
+
+object UserQueries {
+
+  def userIdQuery(id: SlackUserId): Query0[UserId] =
+    sql"select user_id from users where slack_user_id = $id".query[UserId]
+
+}
+````
+
+
+
+### Transaction Doobie II
+````scala
+trait SubscriptionRepository[F[_]] {
+  def getSubscriptions(userId: UserId): F[List[Subscription]]
+}
+
+object SubscriptionRepository {
+  import SubscriptionQueries._
+  val repo: SubscriptionRepository[ConnectionIO] = new SubscriptionRepository[ConnectionIO] {
+    override def getSubscriptions(userId: UserId): ConnectionIO[List[Subscription]] =
+      getSubscriptionsQuery(userId).to[List]
+  }
+}
+
+object SubscriptionQueries {
+  def getSubscriptionsQuery(userId: UserId): Query0[Subscription] =
+    sql"""
+         select owner, repository, subscribed_at, deleted_at
+         from subscriptions
+         where user_id =$userId
+         """.query[Subscription]
+}
+````
+
+
+
+### Transaction Doobie III
+`````scala
+trait UserSubscriptionRepository[F[_]] {
+
+  def getSubscription(slackUserId: SlackUserId): F[List[Subscription]]
+
+}
+
+object UserSubscriptionRepository {
+  val impl: UserSubscriptionRepository[ConnectionIO] = new UserSubscriptionRepository[ConnectionIO] {
+    override def getSubscription(slackUserId: SlackUserId): ConnectionIO[List[Subscription]] =
+      OptionT(UserRepository.repo.findUser(slackUserId))
+        .semiflatMap(userId => SubscriptionRepository.repo.getSubscriptions(userId))
+        .getOrRaise(UserIdNotFoundError)
+  }
+`````
+
+
+
 
 ### Questions?
 
@@ -409,8 +473,9 @@ Note:
 
 ### Fuentes
 
-| Título                                                                                                       | Autor        |
-|--------------------------------------------------------------------------------------------------------------|--------------|
-| [Redis Data Types](https://redis.io/docs/data-types/tutorial/#hashes)                                        | Redis        |
-| [Redis Command HSET](https://redis.io/commands/hset/)                                                        | Redis        |
-| [Cats Effect Migration Guide](https://typelevel.org/cats-effect/docs/migration-guide)                        | Cats Effect  |
+| Título                                                                                | Autor         |
+|---------------------------------------------------------------------------------------|---------------|
+| [Redis Data Types](https://redis.io/docs/data-types/tutorial/#hashes)                 | Redis         |
+| [Redis Command HSET](https://redis.io/commands/hset/)                                 | Redis         |
+| [Cats Effect Migration Guide](https://typelevel.org/cats-effect/docs/migration-guide) | Cats Effect   |
+| [Practical FP in Scala](https://leanpub.com/pfp-scala)                                | Gabriel Volpe |
