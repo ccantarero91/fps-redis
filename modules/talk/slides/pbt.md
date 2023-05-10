@@ -1,473 +1,179 @@
-# PFPS - Persistence Layer - Redis 
+# My Personal Experience Using Scala and Functional Programming
 
 
 
-### What is Redis
 
-[Redis](https://redis.io/) is an open source, in-memory data structure store, used as a database, cache and message broker. <i class="fa-solid fa-book"></i>
+## Introduction
 
+- I'm Cristian
+- I'm based on Madrid, Spain
+- Last two years on Depop as tech contractor
+- Goal: share my personal experience using Scala and functional programming (FP) on Depop.
 
-
-### Redis4Cats
-
-Is a purely functional and asynchronous Redis client built on top of Cats Effect, Fs2, and Java’s Lettuce.
-
-<p>
-  <strong>Redis4Cats</strong> @
-  <a href="https://github.com/profunktor/redis4cats"><i class="fa-brands fa-github-square"></i></a>
-</p>
-
-
-
-### Example of Connection
-
-```scala mdoc:invisible
-import cats.effect._
-import cats.implicits._
-import dev.profunktor.redis4cats.Redis
-import dev.profunktor.redis4cats.effect.Log.Stdout._
-```
-
-```scala mdoc
-object QuickStart extends IOApp.Simple {
-
-  def run: IO[Unit] =
-    Redis[IO].utf8("redis://localhost").use { redis =>
-      for {
-        _ <- redis.set("foo", "123")
-        x <- redis.get("foo")
-        _ <- redis.setNx("foo", "should not happen")
-        y <- redis.get("foo")
-        _ <- IO(println(x === y)) // true
-      } yield ()
-    }
-}
-```
 
 Note:
-1. Here we can see an example from the README of the library where we easy store and retrieve data
-2. The Redis.apply[F] function requires a Log[F] instance.
+- Hello everyone, my name is Cristian Cantarero
+- Based on Madrid, Spain
+- I have been working on Depop for these last two years, in Sellers, Ads and now Fulfilment team.
+- Tech contractor from 47 Degrees (now Xebia Functional) 
+- I'm going to talk to you about some of my experience using Scala and functional programming here.
+- My idea is to share my path of approaches, challenges, and may some lessons I've learned along the way.
 
 
 
-### Book connection
+
+## What is Scala & FP?
+
+- Scala combines elements of object-oriented programming and functional programming.
+- Functional programming relies on the use of pure, immutable, and side-effect-free functions.
+- I wanted to write code that was more concise, and feel more confident with my codebase.
+
+
+Note:
+- As you may know Scala is a multi-paradigm programming language 
+- It combines elements of object-oriented programming and functional programming.
+- Functional programming is a paradigm that relies on 
+- the use of pure, immutable, and side-effect-free functions. 
+- Let's say that everything is easier with things you can predict a sustitute as we do in maths
+- Why?
+- I became interested in functional programming because I wanted to write code that was more concise, expressive and secure.
+
+
+
+
+## Future & Asynchronous Calls
+
+-  `Future` represents a value that may become available in the future.
+-  `Future` allows asynchronous calls without blocking the main thread.
 
 ```scala
-val mkRedisResource: Resource[F, RedisCommands[F, String, String]] =
-  Redis[F].utf8("redis: //localhost")
-```
+import scala.concurrent.Future
 
-RedisCommands[F, K, V] allow access to all the available Redis commands
+case class DepopProduct(id: Long)
+def getPrice(product: DepopProduct): Future[Double] = ???
 
-Note:
-1. As we have seen several times it uses a Resource to deal with the connection 
-2. This RedisCommand is Type-safe: because K and V are the types of keys and values. 
-3. For example, we cannot increment values of type String
-
-
-
-### Redis Commands I
-
-![Redis commands](imgs/CommandsRedis.png)
-[Redis Hash commands](https://redis.io/commands/?group=hash)
-
-
-Note: 
-1. Here we can see all the Hashes Redis commands 
-2. The Hashes is the Redis data type selected in this book for this requirement 
-3. Because it allows to store field-value pairs 
-4. So we can store for an user_id different fields and retrieve them
-5. But there are different types of data types: Lists, String, Keys
-
-
-
-### Redis Commands II
-
-```shell
-> hset user:1000 username antirez birthyear 1977 verified 1
-(integer) 3
-> hget user:1000 username
-"antirez"
-> hget user:1000 birthyear
-"1977"
-> hgetall user:1000
-1) "username"
-2) "antirez"
-3) "birthyear"
-4) "1977"
-5) "verified"
-6) "1"
+val priceOfTheProduct: Future[Double] = getPrice(DepopProduct(1L))
 ```
 
 Note:
-1. For example here with hset we set different  `fields` username, birthday, verified  in the hash stored at `key` user:1000. 
-2. If `key` does not exist, a new key holding a hash is created. 
-3. If `field` already exists in the hash, it is overwritten. 
-4. When we set we can see that the it returns the number of fields that were added
+- One of the first things I started using here was `Future`, which is an abstraction that represents a value that may become available in the future.
+- `Future` allows me to make asynchronous calls without blocking the main thread, and handle possible errors or results with callbacks or combinators.
+- This is really useful to make or code run faster on the server. 
+- `getPrice` is an async function (may calls to a db get the price, but we don't block the thread!!
+- `priceOfTheProduct` is a value that may become in the future
 
 
 
-### Shopping Cart
-Going back again to the book:
+### Typelevel Data Types EitherT & OptionT on Future
+- Dealing with `Future[Either[A, B]]` or `Future[Option[A]]` can be tedious
+- OptionT and EitherT can help on that example
+
+Note:
+- OptionT: `OptionT[F[_], A]` wrapper of `F[Option[A]]`
+- EitherT: `EitherT[F[_], A, B]` wrapper of `F[Either[A, B]]`
+
+
+
+
+Example
 ```scala
-object ShoppingCart {
-  def make[F[_]: GenUUID: MonadThrow](
-      items: Items[F],
-      redis: RedisCommands[F, String, String],
-      exp: ShoppingCartExpiration
-  ): ShoppingCart[F] = ???
-}
+import scala.concurrent.Future
+import cats.data.EitherT
+import cats.data.OptionT
+import cats.syntax.all._
+
+case class DepopProduct(id: Long)
+
+case class ShippingInfo(carrier: String, price: Double)
+
+case class CheckoutProduct(product: DepopProduct, price: Double, shipping: ShippingInfo)
+
+def getPrice(product: DepopProduct): Future[Either[String, Double]] = ???
+def getShippingInfo(product: DepopProduct): Future[Option[ShippingInfo]] = ???
+
+val product: DepopProduct = DepopProduct(1L)
+val checkoutProduct: EitherT[Future, String, CheckoutProduct] = for {
+  price: Double <- EitherT(getPrice(product))
+  shippingInfo: ShippingInfo <- EitherT.fromOptionF(getShippingInfo(product), "Not Shipping Info available")
+} yield CheckoutProduct(product, price, shippingInfo)
+
+val res: Future[Either[String, CheckoutProduct]] = checkoutProduct.value
+
 ```
+Note:
+- These data types from typelevel libraries can be really useful when dealing 
+- Also they help with error handling situations where something can fails or there is no data 
+- In the example we can see how they allow us to work with the proper data in the for-compression 
+
+
+
+
+## Opaque Types
+
+- Opaque Types
+  - have the same internal representation as another type,
+  - but they are distinct at compile-time.
+- Allowing strong typing
+- So you don't get confused passing parameters
+
 
 Note:
-1. Let’s first have a look at the dependencies of the ShoppingCart interpreter 
-2. In addition to RedisCommands, it takes 
-3. an Items[F] and a 
-4. ShoppingCartExpiration (a newtype over a FiniteDuration).
+
+- Another thing I liked about Scala was the ability to use opaque types, which are types that have the same internal representation as another type, but are distinct at compile-time.
+- Opaque types allow me to have strong typing with objects, which improves code safety, readability, and modularity.
+- Here's an example of how I use opaque types to define a `SellerId` or `BuyerId` type that only accepts valid text strings.
 
 
 
-
-### Shopping Cart - add
-
+Example
 ```scala
-def add(
-    userId: UserId,
-    itemId: ItemId,
-    quantity: Quantity
-): F[Unit] =
-  redis.hSet(userId.show, itemId.show, quantity.show)  *>
-    redis.expire(userId.show, exp.value).void
+opaque type SellerId = Int
+
+opaque type BuyerId = Int
+
+def pay(sellerId: SellerId)
+
+def charge(buyerId: BuyerId)
+
 ```
 
 Note:
-1. Adds an item id (field) and a quantity (value) to the user id key 
-2. Also sets the expiration time of the shopping cart for the user
+- Here's an example of how I use opaque types to define a `SellerId` or `BuyerId` to model those cases.
+- Is really easy to mix Seller or buyer in our codebase and have an unexpected results.
 
 
 
 
-### Shopping Cart - GET
+## Using F[_], Async, and IO for Functional Abstractions
 
-```scala
-def get(userId: UserId): F[CartTotal] =
-  redis.hGetAll(userId.show).flatMap {
-    _.toList
-      .traverseFilter {
-        case (k, v)  =>
-          for {
-            id <- ID.read[F, ItemId](k)
-            qt <- MonadThrow[F].catchNonFatal(Quantity(v.toInt))
-            rs <- items.findById(id).map(_.map(_.cart(qt)))
-        } yield rs 
-      }
-      .map { items  =>
-        CartTotal(items, items.foldMap(_.subTotal))
-      } 
-  }
-
-```
-Note:
-1. It tries to find the shopping cart for the user via the hGetAll function, 
-2. This returns a Map[String, String], or a Map[K, V], generically speaking. 
-3. If it exists, it parses both fields and values into a List[CartItem] and finally, 
-4. it calculates the total amount.
+- After using `Future` and opaque types, I started to using and finding other abstractions such as `F[_]`, `Async`, `IO`, and other typelevel libraries.
+- These abstractions allow me to work with side-effects in a more declarative, composable, and controlled way.
+- However, I also encountered some challenges with the syntax (what that hole means) and concepts of functional programming.
+- Here's an example of using IO to make some request...
 
 
 
+## Using Scala 3 with Typelevel Libraries
 
-### Shopping Cart - Cart Item
-```scala
-@derive(decoder, encoder, eqv, show)
-case class CartItem(
-                     item: Item,
-                     quantity: Quantity ){
-  def subTotal: Money = USD(item.price.amount * quantity.value)
-}
-
-implicit val moneyMonoid: Monoid[Money] =
-  new Monoid[Money] {
-    def empty: Money = USD(0)
-    def combine(
-                 x: Money,
-                 y: Money
-               ): Money = x + y
-  }
-```
+- Finally, we had the change to migrate to Scala 3 a project and even create a one from the scratch
+- Scala 3 has a simpler and more consistent syntax, new features such as algebraic enums, union and intersection types, and much mire things
+- It was harder at the beginning because there was much more problems with the tooling
+- An example of how I use Scala 3 with `cats-effect`, `http4s`, `fs2-kafka`and `skunk` to create a functional web application that consumes data from a kafka and database can be found on (https://github.com/depop/fulfilment-notification-ingest)
 
 Note:
-1. The subTotal function is defined on CartItem we are going to see in the following slide
-2. The foldMap function on List[Item] requires a Monoid[Money] instance
+- Scala 3 is the latest version of the language that introduces many improvements and novelties.
 
+## Conclusion
 
-
-
-### Shopping Cart - delete, removeItem
-```scala
-def delete(userId: UserId): F[Unit] =
-  redis.del(userId.show).void
-
-def removeItem(userId: UserId, itemId: ItemId): F[Unit] =
-  redis.hDel(userId.show, itemId.show).void
-```
+- I've seen the benefits of writing more concise, expressive, secure and confident codebase
+- I've also encountered challenges with the syntax and concepts of functional programming. 
+  - Red Book is still helping
+  - Or even Practical Functional Programming with scala can be a nice read.
+- But I encourage to add the libraries to your projects or find some time to try thing with them
+- Overall, I've found functional programming to be a powerful tool for building robust and scalable applications.
 
 Note:
-1. delete, which simply deletes the shopping cart for the user.
-2. removeItem, which removes a specific item from the shopping cart.
-3. Note here it uses `hdel` which Removes the specified fields from the hash stored at key
-
-
-
-
-### Shopping Cart - update
-```scala
-def update(userId: UserId, cart: Cart): F[Unit] =
-  redis.hGetAll(userId.show).flatMap {
-    _.toList.traverse_ {
-      case (k, _)  =>
-        ID.read[F, ItemId](k).flatMap { id  =>
-          cart.items.get(id).traverse_ { q  =>
-            redis.hSet(userId.show, k, q.show)
-          }
-        } }*>
-      redis.expire(userId.show, exp.value).void
-  }
-```
-
-Note:
-1. update retrieves the shopping cart for the user (if it exists)
-2. and it updates the quantity of each matching item,
-3. followed by updating the shopping cart expiration.
-
-
-
-### Health Check
-```scala
-object HealthCheck {
-  def make[F[_]: Temporal](
-      postgres: Resource[F, Session[F]],
-      redis: RedisCommands[F, String, String]
-  ): HealthCheck[F] =
-    new HealthCheck[F] {
-      val q: Query[Void, Int] =
-        sql"SELECT pid FROM pg_stat_activity".query(int4)
-      val redisHealth: F[RedisStatus] =
-        redis.ping
-          .map(_.nonEmpty)
-          .timeout(1.second)
-          .map(Status._Bool.reverseGet)
-          .orElse(Status.Unreachable.pure[F].widen)
-          .map(RedisStatus.apply)
-      val postgresHealth: F[PostgresStatus] =
-        postgres
-          .use(_.execute(q))
-          .map(_.nonEmpty)
-          .timeout(1.second)
-          .map(Status._Bool.reverseGet)
-          .orElse(Status.Unreachable.pure[F].widen)
-          .map(PostgresStatus.apply)
-      val status: F[AppStatus] =
-        (
-          redisHealth,
-          postgresHealth
-        ).parMapN(AppStatus.apply)
- } 
-}
-```
-Note:
-1. To make sure the persistance layer is working correclty there is an endpoint called "/healthcheck"
-2. For Redis, we simply ping the server; 
-3. for Postgres, we run a simple query. 
-3. Both actions have a timeout of one second 
-5. Are performed in parallel, using the parMapN function.
-
-
-
-### Blocking
-- Skunk & Redis4Cats are both async, so don't need to worry about blocking operations
-- But in other libraries such as Slick which are blocking, you can use:
-- In Cats Effects 2 we have `Blocker`
-- In Cats Effects 3 we have the following functions :
-
-```scala
-// for all `Sync[F]`
-def blocking[A](thunk: => A): F[A] 
-
-// for all `Async[F]`
-def evalOn[A](fa: F[A], ec: ExecutionContext): F[A]
-```
-
-Note:
-1. `Blocker`  is datatype that merely wraps an ExecutionContext
-2. `evalOn` is when need to run a whole effect on a blocking pool
-
-
-
-
-### Blocking II 
-
-```scala
-import cats.effect.IO
-import cats.effect.Sync
-
-val program = IO.blocking(println("hello blocking!"))
-// program: IO[Unit] = Blocking(
-//   hint = Blocking,
-//   thunk = <function0>,
-//   event = cats.effect.tracing.TracingEvent$StackTrace
-// )
-
-```
-```scala
-import scala.concurrent.ExecutionContext
-
-def myBlockingPool: ExecutionContext = ???
-
-def myBlocking[A](fa: IO[A]) = fa.evalOn(myBlockingPool)
-```
-
-
-
-### Transactions
-- Imagine we want to create an:
-  - Item
-  - Brand
-  - Categories
-- In an atomic transaction
-- As they are right now defined we cant, so the book propose some changes
-
-
-
-  
-### Transactions II
-
-````scala
-trait TxItems[F[_]] {
-  def create(item: ItemCreation): F[ItemId]
-}
-
-case class ItemCreation(
-  brand: BrandName,
-  category: CategoryName,
-  name: ItemName,
-  desc: ItemDescription,
-  price: Money
-)
-````
-Note:
-1. Instead of taking the BrandId and CategoryId, it takes the names, 
-2. the IDs will be created in the transactional block.
-
-
-
-
-### Transaction III 
-````scala
-object TxItems {
-  import BrandSQL._, CategorySQL._, ItemSQL._
-  def make[F[_]: GenUUID: MonadCancelThrow](
-      postgres: Resource[F, Session[F]]
-  ): TxItems[F] =
-    new TxItems[F] {
-      def create(item: ItemCreation): F[ItemId] =
-        postgres.use { s  =>
-          (
-            s.prepare(insertBrand),
-            s.prepare(insertCategory),
-            s.prepare(insertItem)
-          ).tupled.use {
-            case (ib, ic, it)  =>
-              s.transaction.surround {
-                for {
-                  bid <- ID.make[F, BrandId]
-                  _   <- ib.execute(Brand(bid, item.brand)).void
-                  cid <- ID.make[F, CategoryId]
-                  _   <- ic.execute(Category(cid, item.category)).void
-                  tid <- ID.make[F, ItemId]
-                  itm = CreateItem(item.name, item.desc, item.price, bid, cid)
-                  _   <- it.execute(tid ~ itm).void
-                } yield tid 
-              }
-          } 
-        }
-    } 
-}
-````
-Note:
-- we only need to execute the SQL statements within the scope of the transaction
-- `s.transaction.surround`
-- In Doobie we can do this with ConnectionIO
-
-
-
-### Transaction Doobie I
-
-````scala
-trait UserRepository[F[_]] {
-  def findUser(id: SlackUserId): F[Option[UserId]]
-}
-
-object UserRepository {
-  import UserQueries._
-  val repo: UserRepository[ConnectionIO] = new UserRepository[ConnectionIO] {
-    override def findUser(id: SlackUserId): ConnectionIO[Option[UserId]] =
-      userIdQuery(id).option
-  }
-}
-
-object UserQueries {
-
-  def userIdQuery(id: SlackUserId): Query0[UserId] =
-    sql"select user_id from users where slack_user_id = $id".query[UserId]
-
-}
-````
-
-
-
-### Transaction Doobie II
-````scala
-trait SubscriptionRepository[F[_]] {
-  def getSubscriptions(userId: UserId): F[List[Subscription]]
-}
-
-object SubscriptionRepository {
-  import SubscriptionQueries._
-  val repo: SubscriptionRepository[ConnectionIO] = new SubscriptionRepository[ConnectionIO] {
-    override def getSubscriptions(userId: UserId): ConnectionIO[List[Subscription]] =
-      getSubscriptionsQuery(userId).to[List]
-  }
-}
-
-object SubscriptionQueries {
-  def getSubscriptionsQuery(userId: UserId): Query0[Subscription] =
-    sql"""
-         select owner, repository, subscribed_at, deleted_at
-         from subscriptions
-         where user_id =$userId
-         """.query[Subscription]
-}
-````
-
-
-
-### Transaction Doobie III
-`````scala
-trait UserSubscriptionRepository[F[_]] {
-
-  def getSubscription(slackUserId: SlackUserId): F[List[Subscription]]
-
-}
-
-object UserSubscriptionRepository {
-  val impl: UserSubscriptionRepository[ConnectionIO] = new UserSubscriptionRepository[ConnectionIO] {
-    override def getSubscription(slackUserId: SlackUserId): ConnectionIO[List[Subscription]] =
-      OptionT(UserRepository.repo.findUser(slackUserId))
-        .semiflatMap(userId => SubscriptionRepository.repo.getSubscriptions(userId))
-        .getOrRaise(UserIdNotFoundError)
-  }
-`````
-
+- Thank you for listening, and I encourage you to try or learn more about Scala and functional programming!
 
 
 
@@ -479,9 +185,6 @@ object UserSubscriptionRepository {
 
 ### Fuentes
 
-| Título                                                                                | Autor         |
+| Título                            | Autor   |
 |---------------------------------------------------------------------------------------|---------------|
-| [Redis Data Types](https://redis.io/docs/data-types/tutorial/#hashes)                 | Redis         |
-| [Redis Command HSET](https://redis.io/commands/hset/)                                 | Redis         |
-| [Cats Effect Migration Guide](https://typelevel.org/cats-effect/docs/migration-guide) | Cats Effect   |
-| [Practical FP in Scala](https://leanpub.com/pfp-scala)                                | Gabriel Volpe |
+| [Practical FP in Scala](https://leanpub.com/pfp-scala)            | Gabriel Volpe |
